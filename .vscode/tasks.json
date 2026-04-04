@@ -22,11 +22,7 @@
         {
             "label": "Rebuild u64OS",
             "type": "shell",
-            "command": "make",
-            "args": [
-                "clean"
-            ],
-            "dependsOn": "Build u64OS",
+            "command": "make clean && make -j$(nproc)",
             "group": "build",
             "problemMatcher": [
                 "$gcc"
