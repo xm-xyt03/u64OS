@@ -30,6 +30,9 @@ This project **welcomes use for personal learning, research, and private modific
 ### Build and Run
 
 ```bash
+# Install required libraries for Python build script
+pip3 install textual requests
+
 # Clone the repository
 git clone https://github.com/xm-xyt03/u64OS.git
 cd u64OS
