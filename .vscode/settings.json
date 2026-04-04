@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.asm": "asm-collection",
+        "sysmacros.h": "c"
+    },
+    "cmake.sourceDirectory": "/home/user/32bit_os/src",
+}

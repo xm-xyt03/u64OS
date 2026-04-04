@@ -1,0 +1,29 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/src/include/",
+                "${workspaceFolder}/src/arch/x86/include/"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "c++23",
+            "compilerArgs": [
+                "-pipe",
+                "-ffreestanding",
+                "-nostdlib",
+                "-nostdinc",
+                "-nostdinc++",
+                "-fno-pie",
+                "-fno-stack-protector",
+                "-mcmodel=large",
+                "-fno-asynchronous-unwind-tables",
+                "-fno-exceptions"
+            ],
+            "intelliSenseMode": "gcc-x64"
+        }
+    ],
+    "version": 4
+}

@@ -1,0 +1,4 @@
+build/
+private/
+test/kernel.iso
+test/target/x86_64/iso/boot/kernel.bin

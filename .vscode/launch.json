@@ -1,0 +1,25 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run u64OS",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/usr/bin/make", // 直接调用 make（推荐，确保 make 在系统 PATH 中）
+            "args": [
+                "run"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false, // false = 使用 VS Code 集成终端（推荐）
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "clear": true // 每次运行前清屏，比较干净
+            }
+        }
+    ]
+}
