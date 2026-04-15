@@ -14,7 +14,7 @@ static __always_inline uint64_t rdmsr(uint32_t msr)
     uint32_t ret_hi;
     uint32_t ret_lo;
     asm volatile("rdmsr" : "=a"(ret_lo), "=d"(ret_hi) : "c"(msr));
-    return (ret_hi << 32) | ret_lo;
+    return ((uint64_t)ret_hi << 32) | ret_lo;
 }
 
 static __always_inline void wrmsr(uint32_t msr, uint64_t data)
