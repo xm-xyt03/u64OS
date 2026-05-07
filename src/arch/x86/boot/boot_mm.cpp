@@ -73,35 +73,83 @@ static auto boot_mm_palloc_internal(void) -> void *
 static struct multiboot_tag_elf_sections *elf_info_tag = nullptr;
 mm::phys_addr_t multiboot_tag_start, multiboot_tag_end;
 
-static auto addr_in_used_range(mm::phys_addr_t addr) -> bool
+/* Pre-computed sorted array of [start, end) physical ranges that are in use.
+ * Built once in boot_mm_build_used_ranges(); afterwards addr_in_used_range()
+ * uses a binary search instead of a linear ELF-section scan on every call.
+ */
+struct UsedRange {
+    mm::phys_addr_t start;
+    mm::phys_addr_t end;
+};
+
+#define MAX_USED_RANGES 64
+static UsedRange used_ranges[MAX_USED_RANGES];
+static int used_range_count = 0;
+
+/* Insert a range into the sorted used_ranges array (insertion sort – called
+ * only a handful of times during boot, so O(N²) is irrelevant here). */
+static auto used_range_insert(mm::phys_addr_t start, mm::phys_addr_t end) -> void
+{
+    if (used_range_count >= MAX_USED_RANGES)
+        return;
+
+    int i = used_range_count - 1;
+    while (i >= 0 && used_ranges[i].start > start)
+    {
+        used_ranges[i + 1] = used_ranges[i];
+        i--;
+    }
+    used_ranges[i + 1] = {start, end};
+    used_range_count++;
+}
+
+/* Build the used_ranges cache from ELF sections, framebuffer, and multiboot
+ * tags.  Must be called after elf_info_tag / multiboot_tag_{start,end} are
+ * set.  O(N log N) one-time cost. */
+static auto boot_mm_build_used_ranges(void) -> void
 {
     Elf64_Shdr *shdr;
     void *shdr_end;
-    mm::phys_addr_t seg_start, seg_end;
 
-    shdr_end = (void *)((mm::phys_addr_t)&elf_info_tag->sections + elf_info_tag->num * sizeof(*shdr));
+    shdr_end = (void *)((mm::phys_addr_t)&elf_info_tag->sections +
+                        elf_info_tag->num * sizeof(*shdr));
 
-    for (shdr = (Elf64_Shdr *)&elf_info_tag->sections; (void *)shdr < shdr_end; shdr = (Elf64_Shdr *)((mm::phys_addr_t)shdr + sizeof(*shdr)))
+    for (shdr = (Elf64_Shdr *)&elf_info_tag->sections;
+         (void *)shdr < shdr_end;
+         shdr = (Elf64_Shdr *)((mm::phys_addr_t)shdr + sizeof(*shdr)))
     {
         if ((shdr->sh_type != SHT_PROGBITS) || !(shdr->sh_flags & SHF_ALLOC))
             continue;
 
-        seg_start = 0x100000 + shdr->sh_offset;
-        seg_end = PAGE_ALIGN(seg_start + shdr->sh_size);
-
-        if (addr >= seg_start && addr < seg_end)
-            return true;
+        mm::phys_addr_t seg_start = (0x100000 + shdr->sh_offset) & PAGE_MASK;
+        mm::phys_addr_t seg_end   = PAGE_ALIGN(seg_start + shdr->sh_size);
+        used_range_insert(seg_start, seg_end);
     }
 
     if (boot_tty_has_fb())
     {
-        if ((addr >= (mm::phys_addr_t)boot_fb_base) && (addr <= (mm::phys_addr_t)boot_fb_end))
-            return true;
+        mm::phys_addr_t fb_start = ((mm::phys_addr_t)boot_fb_base) & PAGE_MASK;
+        mm::phys_addr_t fb_end   = PAGE_ALIGN((mm::phys_addr_t)boot_fb_end + 1);
+        used_range_insert(fb_start, fb_end);
     }
 
-    if ((addr >= multiboot_tag_start) && (addr <= multiboot_tag_end))
-        return true;
+    used_range_insert(multiboot_tag_start, multiboot_tag_end);
+}
 
+/* O(log N) binary-search replacement for the old O(N) linear scan. */
+static auto addr_in_used_range(mm::phys_addr_t addr) -> bool
+{
+    int lo = 0, hi = used_range_count - 1;
+    while (lo <= hi)
+    {
+        int mid = (lo + hi) / 2;
+        if (addr >= used_ranges[mid].end)
+            lo = mid + 1;
+        else if (addr < used_ranges[mid].start)
+            hi = mid - 1;
+        else
+            return true;
+    }
     return false;
 }
 
@@ -174,6 +222,56 @@ static auto boot_mm_pgtable_map(mm::phys_addr_t pgtable,
 
     pte = (pte_t *)(pmd[pmd_i] & PAGE_MASK);
     pte[pte_i] = paddr | attr;
+
+    return 0;
+}
+
+#define PMD_SIZE       (1UL << PMD_OFFSET)   /* 2 MB */
+#define PMD_SIZE_MASK  (PMD_SIZE - 1)
+
+/* Map a single 2 MB large page into the page table (PGD → PUD → PMD entry
+ * with PS bit set).  Both vaddr and paddr must be 2 MB-aligned. */
+static auto boot_mm_pgtable_map_2mb(mm::phys_addr_t pgtable,
+                                    mm::virt_addr_t vaddr,
+                                    mm::phys_addr_t paddr,
+                                    mm::page_attr_t attr) -> int
+{
+    pgd_t *pgd;
+    pud_t *pud;
+    pmd_t *pmd;
+    int pgd_i = PGD_ENTRY(vaddr);
+    int pud_i = PUD_ENTRY(vaddr);
+    int pmd_i = PMD_ENTRY(vaddr);
+
+    pgd = (pgd_t *)pgtable;
+    if (!pgd[pgd_i])
+    {
+        pgd[pgd_i] = (pgd_t)boot_mm_palloc();
+        if (IS_ERR_PTR((void *)pgd[pgd_i]))
+        {
+            pgd[pgd_i] = (pgd_t) nullptr;
+            return -ENOMEM;
+        }
+        boot_memset((void *)((mm::phys_addr_t)pgd[pgd_i]), 0, PAGE_SIZE);
+        pgd[pgd_i] |= PDE_DEFAULT;
+    }
+
+    pud = (pud_t *)(pgd[pgd_i] & PAGE_MASK);
+    if (!pud[pud_i])
+    {
+        pud[pud_i] = (pud_t)boot_mm_palloc();
+        if (IS_ERR_PTR((void *)pud[pud_i]))
+        {
+            pud[pud_i] = (pud_t) nullptr;
+            return -ENOMEM;
+        }
+        boot_memset((void *)((mm::phys_addr_t)pud[pud_i]), 0, PAGE_SIZE);
+        pud[pud_i] |= PDE_DEFAULT;
+    }
+
+    pmd = (pmd_t *)(pud[pud_i] & PAGE_MASK);
+    /* Set PS bit to make this a 2 MB leaf entry. */
+    pmd[pmd_i] = paddr | attr | PDE_ATTR_PS;
 
     return 0;
 }
@@ -308,12 +406,30 @@ static auto boot_mm_pgtable_init(void) -> int
             if (vaddr > mm::KERN_DIRECT_MAP_REGION_END)
                 break;
 
-            ret = boot_mm_pgtable_map(boot_kern_pgtable, vaddr, base, PTE_ATTR_P | PTE_ATTR_RW);
-            if (ret < 0)
-                return ret;
-
-            base += PAGE_SIZE;
-            vaddr += PAGE_SIZE;
+            /* Use 2 MB large pages when both base and vaddr are 2 MB-aligned
+             * and at least 2 MB of range remains.  This reduces the number of
+             * page-table entries (and boot_mm_palloc calls) by a factor of 512
+             * for the bulk of physical memory. */
+            if (!(base & PMD_SIZE_MASK) && !(vaddr & PMD_SIZE_MASK) &&
+                (end - base) >= PMD_SIZE &&
+                (mm::KERN_DIRECT_MAP_REGION_END - vaddr + 1) >= PMD_SIZE)
+            {
+                ret = boot_mm_pgtable_map_2mb(boot_kern_pgtable, vaddr, base,
+                                              PDE_ATTR_P | PDE_ATTR_RW);
+                if (ret < 0)
+                    return ret;
+                base  += PMD_SIZE;
+                vaddr += PMD_SIZE;
+            }
+            else
+            {
+                ret = boot_mm_pgtable_map(boot_kern_pgtable, vaddr, base,
+                                          PTE_ATTR_P | PTE_ATTR_RW);
+                if (ret < 0)
+                    return ret;
+                base  += PAGE_SIZE;
+                vaddr += PAGE_SIZE;
+            }
         }
     }
 
@@ -446,6 +562,11 @@ auto boot_mm_init(multiboot_uint8_t *mbi) -> int
         ;
 
     multiboot_tag_end = PAGE_ALIGN((page_attr_t)tag);
+
+    /* Build sorted used-range cache once; all subsequent addr_in_used_range()
+     * calls during page-table setup and page-database init use O(log N)
+     * binary search instead of scanning ELF sections on every call. */
+    boot_mm_build_used_ranges();
 
     if ((ret = boot_mm_pgtable_init()) < 0)
     {
