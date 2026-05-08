@@ -5,3 +5,4 @@ test/kernel.iso
 test/target/x86_64/iso/boot/kernel.bin
 src/arch/x86/boot/boot_font.o
 grub/
+mnt/
