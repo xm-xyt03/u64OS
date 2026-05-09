@@ -62,6 +62,22 @@ class MenuPrompt(App):
         self.exit(opt)
 
 
+def detect_grub():
+
+    grub_base = os.path.abspath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "grub")
+    )
+    if not os.path.exists(grub_base):
+        print(
+            "Error: GRUB is not builded. Please download and build GRUB with tests/scripts/grub_install.py"
+        )
+        exit(2)
+
+    if len(os.listdir(grub_base)) == 1:
+        print("GRUB is already installed!")
+        exit()
+
+
 def download_grub(server):
     """下载GRUB源代码包"""
     grub_dir = list_ftp_files(server, "/gnu/grub")
@@ -307,6 +323,9 @@ def build_grub(archive_path, archive_name):
                 for f in list(future_to_name.keys()):
                     if not f.done():
                         f.cancel()
+
+
+detect_grub()
 
 
 prompt = MenuPrompt()
