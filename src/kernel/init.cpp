@@ -13,15 +13,12 @@ namespace init
 {
     auto global_constructor_caller(void) -> int
     {
-        int (**init_array)(void) = &__init_array;
-        int (**init_array_end)(void) = &__init_array_end;
-        int error;
+        void (**init_array)(void) = &__init_array;
+        void (**init_array_end)(void) = &__init_array_end;
 
-        for (base::size_t i = 0; init_array[i] && ((init_array + i) < init_array_end); i++)
+        for (; init_array < init_array_end; init_array++)
         {
-            error = init_array[i]();
-            if (error)
-                return error;
+            (*init_array)();
         }
 
         return 0;
