@@ -120,3 +120,17 @@ Implements `operator new`/`delete`, sized-delete, and `__cxa_atexit` so C++ can 
 | `src/include/u64OS/compiler.h` | Compiler attributes (`__always_inline`, etc.) |
 | `src/include/kernel/mm.hpp` | Public MM interface |
 | `src/include/kernel/lib.hpp` | Aggregates lib.atomic, lib.container, lib.list |
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for `xm-xyt03/u64OS`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
