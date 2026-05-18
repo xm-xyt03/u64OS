@@ -4,7 +4,7 @@ FIRMWARE = $(ARCH)-efi
 BIOS = -bios /usr/share/ovmf/OVMF.fd
 RM = rm -rf
 
-$(IMAGE):
+$(IMAGE): target/$(ARCH)/iso/boot/kernel.bin
 	@grub-mkrescue /usr/lib/grub/$(FIRMWARE) -o $@ target/$(ARCH)/iso
 
 run: $(IMAGE)
